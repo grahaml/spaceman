@@ -119,7 +119,7 @@ pub fn reconcile(
         let mut model = model.clone();
         reset_settling(&mut model, observation.cycle, None);
         return Reconciliation {
-            placements: flat_placements(settings, model.workspace.axis, &model.workspace.slots),
+            placements: default_placements(settings, model.workspace.axis, &model.workspace.slots),
             model,
             decisions: vec![Decision::MouseDownDeferred],
         };
@@ -222,7 +222,7 @@ pub fn reconcile(
         }
     }
 
-    let placements = flat_placements(settings, next.workspace.axis, &next.workspace.slots);
+    let placements = default_placements(settings, next.workspace.axis, &next.workspace.slots);
     Reconciliation {
         model: next,
         placements,
@@ -438,8 +438,13 @@ fn insert_windows(model: &mut Model, windows: &[PhysicalWindowId], decisions: &m
     }
 }
 
-fn flat_placements(settings: &Settings, axis: crate::Axis, slots: &[Slot]) -> Vec<Placement> {
-    let cells = LayoutTree::weighted_flat(axis, slots.iter()).placements(settings.canvas());
+fn default_placements(settings: &Settings, axis: crate::Axis, slots: &[Slot]) -> Vec<Placement> {
+    let layout = LayoutTree::weighted_flat(axis, slots.iter());
+    let cells = layout
+        .quadrants()
+        .as_ref()
+        .unwrap_or(&layout)
+        .placements(settings.canvas());
     slots
         .iter()
         .zip(settings.spacing.place(settings.usable(), cells))

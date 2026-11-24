@@ -30,7 +30,7 @@ Mode persistence                                        // fullscreen.persist
 ├── Spaceman restart     -> mode and remembered top window restored
 ├── Ghostty native-tab replacement -> keeps mode and slot
 ├── Floating / dialog window opens -> floats above without exiting Fullscreen Layout
-├── New tiled window opens or moves in -> automatically exits Fullscreen Layout and splits side by side
+├── New tiled window opens or moves in -> automatically exits Fullscreen Layout and returns to tiled placement
 └── Last tiled window closes or moves away -> mode turns off
 
 Blocked while on                                        // fullscreen.guards
@@ -89,7 +89,7 @@ independently.
 - **Nothing shows how many windows are stacked or which is next.** Hidden windows are full-size
   underneath rather than hidden, so closing the top window reveals whatever macOS raises next, not
   necessarily the next tile in Spaceman's order. No test covers that close path.
-- **New tiled windows** on the workspace automatically exit Fullscreen Layout and split side by side,
+- **New tiled windows** on the workspace automatically exit Fullscreen Layout and return to tiled placement,
   while floating/dialog windows open above without exiting Fullscreen Layout.
 - Native macOS fullscreen is a different thing: such windows are not managed at all. **Known
   defect (Observed, 2026-10-01):** a tiled browser window whose video enters native fullscreen

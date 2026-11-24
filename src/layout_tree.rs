@@ -68,6 +68,43 @@ impl LayoutTree {
         }
     }
 
+    /// Show a default four-tile split as two equal pairs. Explicit nesting and
+    /// resize weights carry user intent and take precedence over this default.
+    pub(crate) fn quadrants(&self) -> Option<Self> {
+        let Node::Split { axis, children } = &self.root else {
+            return None;
+        };
+        let ([first_pair, second_pair], []) = children.as_chunks::<2>() else {
+            return None;
+        };
+        if !children
+            .iter()
+            .all(|c| c.weight == 1 && matches!(c.node, Node::Leaf(_)))
+        {
+            return None;
+        }
+        let pair_axis = match axis {
+            Axis::Horizontal => Axis::Vertical,
+            Axis::Vertical => Axis::Horizontal,
+        };
+        let pairs = [first_pair, second_pair]
+            .into_iter()
+            .map(|pair| Child {
+                weight: 1,
+                node: Node::Split {
+                    axis: pair_axis,
+                    children: pair.to_vec(),
+                },
+            })
+            .collect();
+        Some(Self {
+            root: Node::Split {
+                axis: *axis,
+                children: pairs,
+            },
+        })
+    }
+
     pub(crate) const fn root_axis(&self) -> Axis {
         match &self.root {
             Node::Split { axis, .. } => *axis,

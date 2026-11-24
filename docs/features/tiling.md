@@ -8,6 +8,7 @@ navigate, reorder, nest, resize, and balance them from the keyboard or the point
 ```ts
 Automatic tiling                                        // tile.auto
 ├── New managed window -> joins the last focused tile’s split, or the root without a surviving focus
+│   ├── Four tiles in a flat split with default weights -> two equal pairs on opposite axes (2×2)
 │   └── Creation or activation before the first visible frame -> briefly recheck for the foreground window
 ├── Window closes -> its slot retires, siblings reflow
 │   ├── Last app window closes but its surface lingers -> siblings reflow when the app confirms closure
@@ -62,7 +63,7 @@ pause, quit, or hotkey loss.
 ## Existing Checks
 
 - Unit (FakeBackend), `src/app/tests/layout.rs`: `focus_navigation_follows_linear_tile_order`,
-  `focus_navigation_crosses_to_the_adjacent_display`,
+  `focus_follows_the_four_visible_quadrants`, `focus_navigation_crosses_to_the_adjacent_display`,
   `workspace_focus_cycle_wraps_through_tile_order_in_every_layout`,
   `keyboard_resize_applies_and_persists_the_focused_layout`,
   `balance_applies_and_persists_the_focused_parent_split`,
@@ -70,6 +71,13 @@ pause, quit, or hotkey loss.
   `reorder_moves_to_an_empty_workspace_on_the_adjacent_display` (issue 119),
   `perpendicular_reorder_creates_a_mixed_split_for_three_windows`,
   `layout_toggle_repartitions_and_persists_the_focused_workspace`.
+- `four_default_tiles_open_and_reopen_in_equal_quadrants` exercises discovery in one cycle and
+  across cycles, the transitions through three and five windows, and spacing on an offset display.
+  `four_tile_default_respects_and_restores_layout_edits` covers the other root axis and a persisted
+  resize inside a quadrant. `tall_windows_use_a_temporary_row_until_quadrants_fit` checks
+  fallback and recovery when adjacent apps require more height than a column can give them.
+  `saved_four_tile_splits_show_quadrants_only_at_default_weights` restores both current saved
+  layouts and older workspaces containing only slots and weights.
 - Engine and layout tree: `new_window_joins_the_focused_nested_split` and
   `corner_drag_moves_both_nested_boundaries` cover insertion and diagonal resizing.
 - Unit (FakeBackend), `src/app/tests/gestures.rs`: drag swap preview, edge-nesting preview,
@@ -97,6 +105,12 @@ pause, quit, or hotkey loss.
 - Live harness (not run): `scripts/live-ghostty-tabs.sh` for native-tab slot preservation.
 
 ## Gotchas
+
+- The four-tile default groups consecutive slots. A horizontal root fills the left column first,
+  then the right. Flipping the root fills the top row first. Gaps and display padding still apply,
+  and indivisible dimensions give the extra point to the trailing tile. Existing saved default
+  four-column layouts also show the grid. Resizing a quadrant saves the edited nested layout.
+  Other window counts use the workspace’s usual split.
 
 - Tests check requested frames; apps with minimum sizes may refuse them. Spaceman grows such a
   window's tile to the size it kept, taking the space from its siblings in proportion to what each

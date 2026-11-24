@@ -6,6 +6,11 @@ use super::{Child, LayoutTree, Node, extent, sizing::required_extent};
 use crate::{Axis, Rect, SlotId};
 
 impl LayoutTree {
+    pub(crate) fn can_fit(&self, output: Rect, minimums: &HashMap<SlotId, (i32, i32)>) -> bool {
+        required_extent(&self.root, Axis::Horizontal, minimums) <= output.width
+            && required_extent(&self.root, Axis::Vertical, minimums) <= output.height
+    }
+
     pub(crate) fn fitted(
         &self,
         output: Rect,

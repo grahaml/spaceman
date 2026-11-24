@@ -210,6 +210,50 @@ fn persisted_state_restores_active_workspaces_and_tile_order() {
 }
 
 #[test]
+fn saved_four_tile_splits_show_quadrants_only_at_default_weights() {
+    let output = crate::Rect {
+        width: 1000,
+        height: 800,
+        ..crate::Rect::default()
+    };
+    for (weights, expected_extents) in [
+        ([1, 1, 1, 1], [(500, 400); 4]),
+        (
+            [4, 2, 2, 2],
+            [(400, 800), (200, 800), (200, 800), (200, 800)],
+        ),
+    ] {
+        let slots = (1..=4)
+            .zip(weights)
+            .map(|(id, weight)| Slot {
+                id: SlotId(u64::from(id)),
+                binding: BindingState::Bound(window(id)),
+                weight,
+            })
+            .collect::<Vec<_>>();
+        let layout = crate::layout_tree::LayoutTree::weighted_flat(crate::Axis::Horizontal, &slots);
+        for layouts in [vec![layout.clone()], vec![]] {
+            let state = WorkspaceState {
+                slots: vec![slots.clone()],
+                layouts,
+                ..WorkspaceState::default()
+            };
+            state.validate().unwrap();
+            let mut restored = Workspaces::default();
+            restored.restore(state);
+            let frames = restored.engine(WorkspaceId::ONE).preview(output);
+            assert_eq!(
+                frames
+                    .iter()
+                    .map(|r| (r.width, r.height))
+                    .collect::<Vec<_>>(),
+                expected_extents
+            );
+        }
+    }
+}
+
+#[test]
 fn persisted_state_restores_focus_and_fullscreen_layout() {
     let first = window(10);
     let second = window(20);
