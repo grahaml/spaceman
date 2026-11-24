@@ -233,18 +233,35 @@ pub fn frame(id: &PhysicalWindowId) -> Result<Rect, WindowAccessError> {
     })
 }
 
+pub(crate) fn native_fullscreen(id: &PhysicalWindowId) -> Result<bool, WindowAccessError> {
+    with_managed_window_result(id, |window| {
+        let fullscreen = optional_bool_attribute(window, "AXFullScreen")
+            .map_err(|_| WindowAccessError::Unavailable)?;
+        // A cached AX handle can survive replacement of its physical window.
+        if fullscreen && physical_window_id(&id.app, window).as_ref() != Some(id) {
+            return Err(WindowAccessError::Unavailable);
+        }
+        Ok(fullscreen)
+    })
+}
+
 pub fn set_position_only(id: &PhysicalWindowId, target: Rect) -> ApplyOutcome {
     match with_managed_window_result(id, |window| {
+        if optional_bool_attribute(window, "AXFullScreen")
+            .map_err(|_| WindowAccessError::Unavailable)?
+        {
+            return Ok(ApplyOutcome::Deferred);
+        }
         let result = without_window_animations(&id.app, || set_position(window, target));
         if window_frame(window).is_some_and(|actual| position_matches(actual, target)) {
-            Ok(())
+            Ok(ApplyOutcome::Applied)
         } else if matches!(result, AXError::InvalidUIElement) {
             Err(WindowAccessError::Gone)
         } else {
             Err(WindowAccessError::Unavailable)
         }
     }) {
-        Ok(()) => ApplyOutcome::Applied,
+        Ok(outcome) => outcome,
         Err(WindowAccessError::Gone) => ApplyOutcome::Gone,
         Err(WindowAccessError::Unavailable) => ApplyOutcome::Unavailable,
     }
@@ -446,6 +463,21 @@ fn apply_element(
             actual: before,
             outcome: ApplyOutcome::Applied,
         };
+    }
+    match optional_bool_attribute(window, "AXFullScreen") {
+        Ok(false) => {}
+        state => {
+            return ApplyResult {
+                window: id.clone(),
+                target,
+                actual: before,
+                outcome: if state == Ok(true) {
+                    ApplyOutcome::Deferred
+                } else {
+                    ApplyOutcome::Unavailable
+                },
+            };
+        }
     }
     let wrote = write_frame(|| set_size(window, target), || set_position(window, target));
     let actual = window_frame(window);

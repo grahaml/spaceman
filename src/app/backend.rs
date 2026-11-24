@@ -19,6 +19,10 @@ pub(super) trait WorkspaceBackend {
     fn is_process_running(&mut self, app: &AppInstanceId) -> bool;
     /// True only when a visible app successfully reports an empty AXWindows list.
     fn confirms_no_windows(&mut self, app: &AppInstanceId) -> bool;
+    fn native_fullscreen(
+        &mut self,
+        window: &crate::PhysicalWindowId,
+    ) -> Result<bool, macos::WindowAccessError>;
     fn apply_observed(
         &mut self,
         placements: &[crate::Placement],
@@ -131,6 +135,13 @@ impl WorkspaceBackend for MacWorkspaceBackend {
         outputs: &macos::DisplayOutputs,
     ) -> Result<crate::NativeObservation, String> {
         macos::snapshot_in_outputs(cycle, outputs).map_err(|error| error.to_string())
+    }
+
+    fn native_fullscreen(
+        &mut self,
+        window: &crate::PhysicalWindowId,
+    ) -> Result<bool, macos::WindowAccessError> {
+        macos::native_fullscreen(window)
     }
 
     fn confirms_no_windows(&mut self, app: &AppInstanceId) -> bool {

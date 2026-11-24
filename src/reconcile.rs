@@ -115,6 +115,16 @@ pub fn reconcile(
     evidence: &ReconciliationEvidence,
     settings: &Settings,
 ) -> Reconciliation {
+    reconcile_retaining(model, observation, evidence, settings, &HashSet::new())
+}
+
+pub(crate) fn reconcile_retaining(
+    model: &Model,
+    observation: &NativeObservation,
+    evidence: &ReconciliationEvidence,
+    settings: &Settings,
+    retained: &HashSet<PhysicalWindowId>,
+) -> Reconciliation {
     if observation.mouse_down {
         let mut model = model.clone();
         reset_settling(&mut model, observation.cycle, None);
@@ -164,7 +174,11 @@ pub fn reconcile(
                         .filter(|slot| slot.belongs_to(&app.id))
                         .filter_map(|slot| slot.bound_window().cloned())
                         .collect();
-                    let stale: Vec<_> = existing.difference(&current).cloned().collect();
+                    let stale: Vec<_> = existing
+                        .difference(&current)
+                        .filter(|id| !retained.contains(*id))
+                        .cloned()
+                        .collect();
                     let new: Vec<_> = current.difference(&existing).cloned().collect();
 
                     let replacement = app.bundle_id == "com.mitchellh.ghostty"
@@ -441,7 +455,7 @@ fn insert_windows(model: &mut Model, windows: &[PhysicalWindowId], decisions: &m
 fn default_placements(settings: &Settings, axis: crate::Axis, slots: &[Slot]) -> Vec<Placement> {
     let layout = LayoutTree::weighted_flat(axis, slots.iter());
     let cells = layout
-        .quadrants()
+        .default_grid()
         .as_ref()
         .unwrap_or(&layout)
         .placements(settings.canvas());

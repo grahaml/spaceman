@@ -663,3 +663,74 @@ fn reappearing_parked_floating_window_preserves_fullscreen_layout() {
     assert_eq!(rt.backend.frames[&first], outputs().main().frame);
     assert_eq!(rt.backend.frames[&second], outputs().main().frame);
 }
+
+#[test]
+fn native_fullscreen_holds_only_its_own_tile_and_exits_back_into_place() {
+    let [first, browser, third, fourth] = [11, 12, 13, 14].map(window);
+    let initial = [&first, &browser, &third, &fourth].map(|w| (w.clone(), frame(0)));
+    let mut rt = runtime(FakeBackend {
+        observation: Some(observation_for_windows(
+            "com.example.Browser",
+            &browser,
+            &initial,
+        )),
+        frames: initial.into_iter().collect(),
+        ..FakeBackend::default()
+    });
+    let cancelled = AtomicBool::new(false);
+    rt.cycle(outputs(), &cancelled).unwrap();
+    let owner = WorkspaceId::ONE;
+    assert!(rt.workspaces.engine_mut(owner).resize_focused_tile(
+        &browser,
+        ResizeDirection::Grow,
+        50,
+        &Settings::for_output(outputs().main().frame)
+    ));
+    rt.layout_workspace(owner, outputs().main().frame, &cancelled);
+    let layout = rt.workspaces.engine(owner).layout().clone();
+    let tile = rt
+        .workspaces
+        .engine(owner)
+        .slot_for_window(&browser)
+        .unwrap();
+    let target = rt.backend.frames[&browser];
+    rt.backend.native_fullscreen.insert(browser.clone());
+    rt.backend
+        .frames
+        .insert(browser.clone(), outputs().main().frame);
+    rt.omitted_windows.insert(
+        browser.clone(),
+        cycle::Omission::new(Instant::now() - Duration::from_secs(10)),
+    );
+    rt.backend.calls.clear();
+    rt.cycle(outputs(), &cancelled).unwrap();
+    assert_eq!(
+        rt.workspaces.engine(owner).slot_for_window(&browser),
+        Some(tile)
+    );
+    assert!(!rt.backend.calls.iter().any(
+        |c| matches!(c, BackendCall::Apply(w,_) | BackendCall::SetPosition(w,_) if w == &browser)
+    ));
+    assert_eq!(rt.workspaces.engine(owner).layout(), &layout);
+    rt.backend.native_fullscreen.clear();
+    rt.cycle(outputs(), &cancelled).unwrap();
+    assert_eq!(rt.backend.frames[&browser], target);
+    assert_eq!(
+        rt.workspaces.engine(owner).slot_for_window(&browser),
+        Some(tile)
+    );
+
+    // An actual close inside the same application still reflows the other tiles.
+    rt.backend.native_fullscreen.insert(browser.clone());
+    rt.backend.frames.remove(&first);
+    rt.cycle(outputs(), &cancelled).unwrap();
+    assert_eq!(rt.workspaces.workspace_of(&first), None);
+    assert_eq!(
+        rt.workspaces.engine(owner).slot_for_window(&browser),
+        Some(tile)
+    );
+    rt.backend.native_fullscreen.clear();
+    rt.backend.frames.remove(&browser);
+    rt.cycle(outputs(), &cancelled).unwrap();
+    assert_eq!(rt.workspaces.workspace_of(&browser), None);
+}

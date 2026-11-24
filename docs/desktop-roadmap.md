@@ -14,16 +14,16 @@ orientations and restoring the preferred one on a larger display. The remaining 
 is a four-window live run on a disposable workspace, including a pair of size-constrained apps.
 [Tiling](features/tiling.md)
 
-For five tiles, replay a mix of wide and tall apps before choosing a default. Compare the current
-split with two rows of three and two tiles. Record each requested frame and the frame the app
-actually accepts, check for overlaps, then close the fifth window and verify the four-tile layout.
+Five default tiles use two rows of three and two. Engine checks cover a mixed set of app
+minimums, a temporary change of grouping, and the return to quadrants when the fifth closes.
+On a live Mac, verify both requested frames and final window-server frames.
 
 ### 2. Keep a browser in its tile through native fullscreen
 
-Reproduce the documented loss of a browser’s slot after fullscreen video. Teach the observation
-cycle to distinguish a fullscreen window from a closed one. Enter fullscreen for longer than the
-omission grace period, exit, and verify that the same slot returns to its workspace and quadrant.
-Closing the window afterwards should still release its tile. [Fullscreen Layout](features/fullscreen-layout.md)
+The runtime retains the individual window’s slot when Accessibility identifies it as fullscreen.
+The fake-backend check covers the omission timeout, hand-resized layout, same-app sibling closure,
+return to the same slot, and a subsequent close. The live check is a browser video round trip
+on a disposable workspace. [Fullscreen Layout](features/fullscreen-layout.md)
 
 ### 3. Make the daily keyboard workflow predictable
 

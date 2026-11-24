@@ -152,11 +152,13 @@ ANSI number row, and Tab remains physical Tab. See [Controls](docs/controls.md) 
 balance, CLI, and socket behavior.
 
 Four tiled windows on a default workspace fill a 2×2 grid. Open a fourth window or close a fifth
-to get the grid automatically. You can focus, swap, and resize its tiles with the usual controls.
+to get the grid automatically. A fifth window makes two rows, three tiles above and two below.
+You can focus, swap, and resize the tiles with the usual controls.
 If two apps need more height than they can share in a column, Spaceman tries them side by side
 in a row. It returns to the original grid orientation when there is room.
 Spaceman keeps your custom splits and proportions when you add a window to an edited layout.
-When an app closes its last window,
+A tiled browser that enters native macOS fullscreen keeps its slot while Accessibility identifies
+the same window as fullscreen. Exiting video returns it to its tile. When an app closes its last window,
 neighboring tiles can expand as soon as the app confirms the close. When apps refuse to fit side by side,
 Spaceman can temporarily stack adjacent tiles and restore the requested split when space allows.
 
@@ -195,7 +197,8 @@ confirm that restoration completed **before** removing the app or state. Do not 
 must return.
 
 After a crash, recorded parked windows missing from otherwise valid workspace state are restored
-before automatic reconciliation resumes. Recovery metadata stays intact until restoration and its
+before automatic reconciliation resumes. A visible tile stranded beyond a display edge is moved
+back and checked against the window server. Recovery metadata stays intact until restoration and its
 durable removal succeed.
 
 Follow [Recovery](docs/recovery.md) for stuck or crashed processes and safe uninstall instructions.

@@ -270,3 +270,35 @@ fn three_chat_windows_fit_the_laptop_without_changing_the_saved_split() {
     assert!(a.width >= 660 && b.width >= 300 && c.width >= 800);
     assert_eq!(before, runtime.workspaces.state());
 }
+
+#[test]
+fn five_tiles_refit_to_two_then_three_after_width_refusals() {
+    let mut rt = tiled(&[
+        (window(1), 500),
+        (window(2), 500),
+        (window(3), 0),
+        (window(4), 0),
+        (window(5), 0),
+    ]);
+    let before = rt.workspaces.state();
+    let output = outputs().main().frame;
+    rt.layout_workspace(WorkspaceId::ONE, output, &AtomicBool::new(false));
+    for (id, (x, y, width)) in (1..=5).zip([
+        (0, 0, 500),
+        (500, 0, 500),
+        (0, 400, 333),
+        (333, 400, 333),
+        (666, 400, 334),
+    ]) {
+        assert_eq!(
+            rt.backend.frames[&window(id)],
+            crate::Rect {
+                x,
+                y,
+                width,
+                height: 400
+            }
+        );
+    }
+    assert_eq!(rt.workspaces.state(), before);
+}

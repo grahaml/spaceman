@@ -27,6 +27,7 @@ use crate::{
     PhysicalWindowId, Rect, Settings,
 };
 
+pub(crate) use apply::native_fullscreen;
 pub use apply::{
     ApplyOutcome, ApplyResult, WindowAccessError, apply, apply_managed, apply_while, focus_window,
     frame, raise_window, set_position_only, warp_pointer,

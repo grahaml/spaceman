@@ -7,7 +7,6 @@
 //! recovering them as stray unowned windows) only while they are in the scratchpad, so pause,
 //! quit, restart, a crash or switching the Lab off all bring them back on screen.
 
-use super::parking::RESTORE_CONFIRM_TOLERANCE;
 use super::*;
 use crate::scratchpad::{ScratchpadCommand, summon_frame};
 
@@ -223,9 +222,7 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
             if self
                 .backend
                 .window_server_frame(&window)
-                .is_some_and(|actual| {
-                    actual.position_approximately_equals(expected, RESTORE_CONFIRM_TOLERANCE)
-                })
+                .is_some_and(|actual| self.restore_arrived(actual, expected))
             {
                 self.scratchpad.set_pending_summon(&window, None);
                 self.commit_unparked(&window);
@@ -281,9 +278,7 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
         if self
             .backend
             .window_server_frame(window)
-            .is_some_and(|actual| {
-                actual.position_approximately_equals(target, RESTORE_CONFIRM_TOLERANCE)
-            })
+            .is_some_and(|actual| self.restore_arrived(actual, target))
         {
             self.scratchpad.set_pending_summon(window, None);
             self.commit_unparked(window);
@@ -299,9 +294,7 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 if self
                     .backend
                     .window_server_frame(window)
-                    .is_some_and(|actual| {
-                        actual.position_approximately_equals(target, RESTORE_CONFIRM_TOLERANCE)
-                    })
+                    .is_some_and(|actual| self.restore_arrived(actual, target))
                 {
                     self.scratchpad.set_pending_summon(window, None);
                     self.commit_unparked(window);

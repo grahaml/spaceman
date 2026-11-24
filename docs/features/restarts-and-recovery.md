@@ -78,6 +78,14 @@ See [Recovery](../recovery.md) for the safe manual procedure; never delete `park
 
 ## Existing Checks
 
+- `stranded_tile_retries_a_position_write_until_the_window_server_shows_arrival` covers AX
+  reporting the requested frame while CG still shows a sliver on the edge of the display.
+  Recovery retries a position write. Positive on-screen evidence keeps the slot through
+  the normal omission timeout. Ordered-out windows on another Space remain there.
+- `optimistic_relayout_keeps_the_recovery_record_until_cg_confirms_arrival` checks that a
+  relayout of a parked window waits for window-server confirmation and retains recovery
+  metadata when persistence fails.
+
 - Unit (FakeBackend): `parking.rs` `restore_all_repositions_windows_at_their_original_frames`,
   `restore_keeps_recovery_frame_until_the_window_server_confirms_arrival`,
   `persisted_frames_recover_after_a_simulated_crash`; `reliability.rs`

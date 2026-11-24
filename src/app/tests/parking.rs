@@ -754,3 +754,50 @@ fn mission_control_thumbnail_frames_do_not_trigger_repark_or_escalation() {
         |call| matches!(call, BackendCall::SetPosition(window, _) if window == &parked_window)
     ));
 }
+
+#[test]
+fn optimistic_relayout_keeps_the_recovery_record_until_cg_confirms_arrival() {
+    let w = window(42);
+    let display = outputs();
+    let output = display.main().frame;
+    let offscreen = main_parked_frame(output);
+    let mut rt = runtime_with_parked(
+        FakeBackend {
+            server_frames: HashMap::from([(w.clone(), offscreen)]),
+            frames: HashMap::from([(w.clone(), output)]),
+            persisted: HashMap::from([(w.clone(), output)]),
+            frozen_server_frames: true,
+            ..FakeBackend::default()
+        },
+        [(w.clone(), output)],
+    );
+    bind(&mut rt, WorkspaceId::ONE, &w);
+    let cancelled = AtomicBool::new(false);
+    rt.layout_workspace(WorkspaceId::ONE, output, &cancelled);
+    assert_eq!(rt.parked.get(&w), Some(&output));
+    assert_eq!(rt.backend.persisted.get(&w), Some(&output));
+    rt.backend.frozen_server_frames = false;
+    rt.backend.fail_persist = true;
+    rt.layout_workspace(WorkspaceId::ONE, output, &cancelled);
+    assert_eq!(rt.backend.server_frames[&w], output);
+    assert_eq!(rt.parked.get(&w), Some(&output));
+    rt.backend.fail_persist = false;
+    rt.layout_workspace(WorkspaceId::ONE, output, &cancelled);
+    assert!(rt.parked.is_empty() && rt.backend.persisted.is_empty());
+}
+
+#[test]
+fn parked_strip_near_the_original_position_does_not_confirm_restoration() {
+    let mut rt = runtime(FakeBackend::default());
+    let single = macos::DisplayOutputs::new(vec![outputs().main().clone()]).unwrap();
+    rt.note_outputs(&single);
+    let target = crate::Rect {
+        x: 970,
+        y: 20,
+        width: 400,
+        height: 300,
+    };
+    let parked = crate::Rect { x: 999, ..target };
+    assert!(!rt.restore_arrived(parked, target));
+    assert!(rt.restore_arrived(target, target));
+}

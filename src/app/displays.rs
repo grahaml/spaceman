@@ -175,6 +175,7 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 if displays
                     .iter()
                     .any(|display| display.contains_center(frame))
+                    || at_recovery_origin(frame, placement.frame, output)
                 {
                     continue;
                 }
@@ -188,9 +189,12 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 recover_tiles.push(placement);
             }
             if !recover_tiles.is_empty() {
-                let results = self
+                let mut results = self
                     .backend
                     .apply_managed(&recover_tiles, &settings, cancelled);
+                for result in &mut results {
+                    self.confirm_stranded_tile(result, output, &displays, cancelled);
+                }
                 self.record_results(workspace, &results);
                 let initially_failed = failed_results(&results);
                 *failed += self
@@ -220,6 +224,9 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                     continue;
                 }
                 let target = clamp_into_output(frame, output);
+                if at_recovery_origin(frame, target, output) {
+                    continue;
+                }
                 let outcome = self.backend.set_position(&window, target);
                 log_event!(
                     "recover stranded floating {:?} on workspace {} from {:?} to {:?} ({:?})",
@@ -229,14 +236,68 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                     target,
                     outcome
                 );
-                if !matches!(
-                    outcome,
-                    macos::ApplyOutcome::Applied | macos::ApplyOutcome::Gone
-                ) {
+                if outcome != macos::ApplyOutcome::Gone
+                    && (outcome != macos::ApplyOutcome::Applied
+                        || !self
+                            .backend
+                            .window_server_frame(&window)
+                            .is_some_and(|frame| {
+                                output.contains_center(frame)
+                                    || at_recovery_origin(frame, target, output)
+                            }))
+                {
                     *failed += 1;
                 }
             }
         }
+    }
+
+    fn confirm_stranded_tile(
+        &mut self,
+        result: &mut macos::ApplyResult,
+        output: crate::Rect,
+        displays: &[crate::Rect],
+        cancelled: &AtomicBool,
+    ) {
+        if !matches!(
+            result.outcome,
+            macos::ApplyOutcome::Applied | macos::ApplyOutcome::Constrained
+        ) {
+            return;
+        }
+        let mut actual = self.backend.window_server_frame(&result.window);
+        if actual.is_some_and(|frame| {
+            !at_recovery_origin(frame, result.target, output)
+                && !displays
+                    .iter()
+                    .any(|display| display.contains_center(frame))
+        }) && !cancelled.load(Ordering::Acquire)
+            && !self.backend.mouse_down()
+        {
+            // AX can report the target while CG still shows a sliver. The normal
+            // layout write then short-circuits. Force one move before checking CG again.
+            let _ = self.backend.set_position(&result.window, result.target);
+            actual = self.backend.window_server_frame(&result.window);
+        }
+        if !actual.is_some_and(|frame| {
+            output.contains_center(frame) || at_recovery_origin(frame, result.target, output)
+        }) {
+            result.outcome = macos::ApplyOutcome::Unavailable;
+        }
+    }
+
+    /// A one-pixel parking strip near the target edge can be within position
+    /// tolerance. Confirm that the window actually covers part of a display.
+    pub(super) fn restore_arrived(&self, actual: crate::Rect, target: crate::Rect) -> bool {
+        actual.position_approximately_equals(target, super::parking::RESTORE_CONFIRM_TOLERANCE)
+            && self.displays.known.as_ref().map_or_else(
+                || crate::geometry::shows_on(actual, &[target]),
+                |outputs| {
+                    outputs
+                        .frames()
+                        .any(|display| crate::geometry::shows_on(actual, &[display]))
+                },
+            )
     }
 
     /// Where a recovery frame is restored: itself while it shows on a connected
@@ -248,6 +309,12 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
         let displays: Vec<_> = outputs.frames().collect();
         crate::geometry::onto_displays(frame, &displays, outputs.main().frame)
     }
+}
+
+/// A window with a large minimum size can cover its tile while its center is
+/// beyond the screen. Once CG confirms its origin, further moves cannot help.
+fn at_recovery_origin(frame: crate::Rect, target: crate::Rect, output: crate::Rect) -> bool {
+    frame.x == target.x && frame.y == target.y && crate::geometry::shows_on(frame, &[output])
 }
 
 /// Move `frame` (keeping its size) so its top-left sits inside `output`.
