@@ -258,18 +258,9 @@ impl Engine {
         {
             return false;
         }
-        let base = self.base_layout();
-        let mut tree = base.fitted(output, &slots);
-        // A pair of tall windows can fit side by side but not stacked.
-        if self.quadrants.is_some() && !tree.as_ref().unwrap_or(base).can_fit(output, &slots) {
-            let fallback = self
-                .layout
-                .fitted(output, &slots)
-                .unwrap_or_else(|| self.layout.clone());
-            if fallback.can_fit(output, &slots) {
-                tree = Some(fallback);
-            }
-        }
+        let tree = self
+            .layout
+            .fitted_for_display(self.quadrants.as_ref(), output, &slots);
         let changed = self.fit.as_ref().and_then(|fit| fit.tree.as_ref()) != tree.as_ref();
         self.fit = Some(DisplayFit {
             output,
@@ -590,6 +581,44 @@ mod tests {
     }
 
     #[test]
+    fn quadrant_pairs_turn_to_fit_app_minimums() {
+        let settings = Settings::for_output(Rect {
+            width: 1000,
+            height: 800,
+            ..Rect::default()
+        });
+        let mut engine = Engine::default();
+        let grid = observe_windows(&mut engine, &[1, 2, 3, 4], &settings).placements;
+        let minimums = grid
+            .iter()
+            .zip([500, 500, 250, 250])
+            .map(|(p, height)| (p.window.clone().unwrap(), (450, height)))
+            .collect();
+        engine.fit_minimums(&settings, &minimums);
+        let fitted = engine.placements(&settings);
+        let expected = [(0, 0, 500), (500, 0, 500), (0, 500, 300), (500, 500, 300)];
+        for ((tile, original), (x, y, height)) in fitted.iter().zip(&grid).zip(expected) {
+            assert_eq!((tile.slot, &tile.window), (original.slot, &original.window));
+            assert_eq!(
+                tile.frame,
+                Rect {
+                    x,
+                    y,
+                    width: 500,
+                    height
+                }
+            );
+        }
+        let larger = Settings::for_output(Rect {
+            height: 1000,
+            ..settings.output
+        });
+        assert!(engine.fit_minimums(&larger, &minimums));
+        let placements = engine.placements(&larger);
+        assert_eq!((placements[1].frame.x, placements[1].frame.y), (0, 500));
+    }
+
+    #[test]
     fn tall_windows_use_a_temporary_row_until_quadrants_fit() {
         let settings = Settings::for_output(Rect {
             width: 1000,
@@ -598,7 +627,7 @@ mod tests {
         });
         let mut engine = Engine::default();
         let grid = observe_windows(&mut engine, &[1, 2, 3, 4], &settings).placements;
-        let tall = grid[..2]
+        let tall = grid
             .iter()
             .map(|p| (p.window.clone().unwrap(), (0, 500)))
             .collect();

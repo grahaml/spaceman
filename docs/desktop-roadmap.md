@@ -9,9 +9,14 @@ on a usable desktop out of the box. [Omarchy](https://omarchy.org/)
 
 Open four tiled windows together and one at a time. Verify their frames, move focus around the
 grid, close and reopen a tile, then add a fifth window and return to four. Repeat with saved
-layouts and an app that enforces a minimum size. Automated checks cover these cases. A
-four-window live run on a disposable workspace is the remaining acceptance check.
+layouts and apps that enforce a minimum width or height. Automated checks cover trying both grid
+orientations and restoring the preferred one on a larger display. The remaining acceptance check
+is a four-window live run on a disposable workspace, including a pair of size-constrained apps.
 [Tiling](features/tiling.md)
+
+For five tiles, replay a mix of wide and tall apps before choosing a default. Compare the current
+split with two rows of three and two tiles. Record each requested frame and the frame the app
+actually accepts, check for overlaps, then close the fifth window and verify the four-tile layout.
 
 ### 2. Keep a browser in its tile through native fullscreen
 
@@ -39,5 +44,7 @@ displayed chord matches the action it invokes. [Controls](controls.md)
 Exercise permission onboarding, pause, restart, upgrade, and uninstall on a clean supported Mac.
 With windows parked on another workspace, verify that pause and quit restore them on-screen,
 restart restores the arrangement, and a failed restore retains its recovery record. Record
-the build, OS, display setup, and observed result for each run. [Recovery checks](features/restarts-and-recovery.md)
+the build, OS, display setup, and observed result for each run. Also exercise a visible workspace
+with one window stranded off-screen. Check its actual frame after recovery and the parked record
+after a failed write. [Recovery checks](features/restarts-and-recovery.md)
 and [release checks](releasing.md)

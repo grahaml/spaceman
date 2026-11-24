@@ -71,7 +71,11 @@ impl LayoutTree {
     /// Show a default four-tile split as two equal pairs. Explicit nesting and
     /// resize weights carry user intent and take precedence over this default.
     pub(crate) fn quadrants(&self) -> Option<Self> {
-        let Node::Split { axis, children } = &self.root else {
+        self.quadrants_on(self.root_axis())
+    }
+
+    fn quadrants_on(&self, axis: Axis) -> Option<Self> {
+        let Node::Split { children, .. } = &self.root else {
             return None;
         };
         let ([first_pair, second_pair], []) = children.as_chunks::<2>() else {
@@ -83,10 +87,7 @@ impl LayoutTree {
         {
             return None;
         }
-        let pair_axis = match axis {
-            Axis::Horizontal => Axis::Vertical,
-            Axis::Vertical => Axis::Horizontal,
-        };
+        let pair_axis = perpendicular(axis);
         let pairs = [first_pair, second_pair]
             .into_iter()
             .map(|pair| Child {
@@ -99,7 +100,7 @@ impl LayoutTree {
             .collect();
         Some(Self {
             root: Node::Split {
-                axis: *axis,
+                axis,
                 children: pairs,
             },
         })
@@ -222,10 +223,7 @@ impl LayoutTree {
 
     pub(crate) fn toggle_root_axis(&mut self) {
         if let Node::Split { axis, .. } = &mut self.root {
-            *axis = match *axis {
-                Axis::Horizontal => Axis::Vertical,
-                Axis::Vertical => Axis::Horizontal,
-            };
+            *axis = perpendicular(*axis);
         }
     }
 
@@ -309,6 +307,13 @@ fn validate_node(node: &Node, root: bool, leaves: &mut HashSet<SlotId>) -> Resul
         }
     }
     Ok(())
+}
+
+const fn perpendicular(axis: Axis) -> Axis {
+    match axis {
+        Axis::Horizontal => Axis::Vertical,
+        Axis::Vertical => Axis::Horizontal,
+    }
 }
 
 const fn direction_axis(direction: Direction) -> Axis {
