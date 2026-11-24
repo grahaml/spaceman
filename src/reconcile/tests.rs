@@ -16,8 +16,8 @@ fn weighted_slot(id: u64, weight: u32) -> Slot {
 }
 
 #[test]
-fn flat_placements_partition_without_gaps_or_rounding_loss() {
-    let placements = flat_placements(
+fn default_placements_partition_without_gaps_or_rounding_loss() {
+    let placements = default_placements(
         &Settings::for_output(Rect {
             x: 10,
             y: 20,
@@ -41,7 +41,7 @@ fn flat_placements_partition_without_gaps_or_rounding_loss() {
 }
 
 #[test]
-fn flat_placements_reserve_unresolved_slots() {
+fn default_placements_reserve_unresolved_slots() {
     let mut unresolved = weighted_slot(2, 1);
     unresolved.binding = BindingState::Unresolved {
         previous: unresolved.bound_window().unwrap().clone(),
@@ -49,7 +49,7 @@ fn flat_placements_reserve_unresolved_slots() {
         since: 4,
     };
 
-    let placements = flat_placements(
+    let placements = default_placements(
         &Settings::for_output(Rect {
             width: 100,
             height: 50,
@@ -65,8 +65,8 @@ fn flat_placements_reserve_unresolved_slots() {
 }
 
 #[test]
-fn flat_placements_preserve_cumulative_weight_rounding() {
-    let placements = flat_placements(
+fn default_placements_preserve_cumulative_weight_rounding() {
+    let placements = default_placements(
         &Settings::for_output(Rect {
             x: 10,
             y: 20,

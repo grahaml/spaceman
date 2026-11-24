@@ -1,6 +1,46 @@
 use super::*;
 
 #[test]
+fn focus_follows_the_four_visible_quadrants() {
+    let windows = [1, 2, 3, 4].map(window);
+    let initial = windows.clone().map(|w| (w, frame(0)));
+    let mut runtime = runtime(FakeBackend {
+        focused: Some(windows[0].clone()),
+        observation: Some(observation_for_windows(
+            "com.example.Editor",
+            &windows[0],
+            &initial,
+        )),
+        frames: initial.into_iter().collect(),
+        ..FakeBackend::default()
+    });
+    let cancelled = AtomicBool::new(false);
+    runtime.cycle(outputs(), &cancelled).unwrap();
+    for (window, (x, y)) in windows.iter().zip([(0, 0), (0, 400), (500, 0), (500, 400)]) {
+        assert_eq!(
+            runtime.backend.frames[window],
+            crate::Rect {
+                x,
+                y,
+                width: 500,
+                height: 400
+            }
+        );
+    }
+    for (direction, expected) in [
+        (Direction::Right, &windows[2]),
+        (Direction::Down, &windows[3]),
+        (Direction::Left, &windows[1]),
+        (Direction::Up, &windows[0]),
+    ] {
+        runtime
+            .focus_relative(direction, outputs(), &cancelled)
+            .unwrap();
+        assert_eq!(runtime.backend.focused.as_ref(), Some(expected));
+    }
+}
+
+#[test]
 fn focus_navigation_follows_linear_tile_order() {
     let first = window(10);
     let second = window(20);

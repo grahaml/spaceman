@@ -151,7 +151,10 @@ Character shortcuts follow the active macOS keyboard layout. Workspace digits re
 ANSI number row, and Tab remains physical Tab. See [Controls](docs/controls.md) for drag, resize,
 balance, CLI, and socket behavior.
 
-New windows join the most recently focused tile’s split. When an app closes its last window,
+Four tiled windows on a default workspace fill a 2×2 grid. Open a fourth window or close a fifth
+to get the grid automatically. You can focus, swap, and resize its tiles with the usual controls.
+Spaceman keeps your custom splits and proportions when you add a window to an edited layout.
+When an app closes its last window,
 neighboring tiles can expand as soon as the app confirms the close. When apps refuse to fit side by side,
 Spaceman can temporarily stack adjacent tiles and restore the requested split when space allows.
 
@@ -203,6 +206,7 @@ Follow [Recovery](docs/recovery.md) for stuck or crashed processes and safe unin
 - [Security and privacy](docs/security-and-privacy.md)
 - [Compatibility](docs/compatibility.md)
 - [Known limitations](docs/limitations.md)
+- [Keyboard-first desktop roadmap](docs/desktop-roadmap.md)
 - [Development](docs/development.md)
 - [Releasing](docs/releasing.md)
 - [Contributing](CONTRIBUTING.md)

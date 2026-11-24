@@ -19,6 +19,9 @@ pub struct StaleCycle {
 pub struct Engine {
     model: Model,
     layout: LayoutTree,
+    // Derived from four default-weight leaves. Membership changes still operate
+    // on the requested split; editing a quadrant commits the displayed tree.
+    quadrants: Option<LayoutTree>,
     // Only the requested layout above is persisted. The fit is shared by
     // placement, navigation and HUD previews until its inputs change.
     fit: Option<DisplayFit>,
@@ -72,7 +75,7 @@ impl Engine {
             &result.model.workspace.slots,
             self.insertion_focus,
         ) {
-            self.fit = None;
+            self.refresh_display_layout();
             self.insertion_focus = self
                 .insertion_focus
                 .filter(|&id| result.model.slot(id).is_some());
@@ -215,7 +218,11 @@ impl Engine {
         self.fit
             .as_ref()
             .and_then(|fit| fit.tree.as_ref())
-            .unwrap_or(&self.layout)
+            .unwrap_or_else(|| self.base_layout())
+    }
+
+    fn base_layout(&self) -> &LayoutTree {
+        self.quadrants.as_ref().unwrap_or(&self.layout)
     }
 
     /// Re-evaluate even without a new refusal: a removed sibling or a larger
@@ -251,7 +258,18 @@ impl Engine {
         {
             return false;
         }
-        let tree = self.layout.fitted(output, &slots);
+        let base = self.base_layout();
+        let mut tree = base.fitted(output, &slots);
+        // A pair of tall windows can fit side by side but not stacked.
+        if self.quadrants.is_some() && !tree.as_ref().unwrap_or(base).can_fit(output, &slots) {
+            let fallback = self
+                .layout
+                .fitted(output, &slots)
+                .unwrap_or_else(|| self.layout.clone());
+            if fallback.can_fit(output, &slots) {
+                tree = Some(fallback);
+            }
+        }
         let changed = self.fit.as_ref().and_then(|fit| fit.tree.as_ref()) != tree.as_ref();
         self.fit = Some(DisplayFit {
             output,
@@ -372,7 +390,7 @@ impl Engine {
         window: &PhysicalWindowId,
         op: impl FnOnce(&mut LayoutTree, crate::SlotId) -> bool,
     ) -> bool {
-        let requested = &self.layout;
+        let requested = self.quadrants.as_ref().unwrap_or(&self.layout);
         let Some(tree) = self
             .fit
             .as_mut()
@@ -400,8 +418,13 @@ impl Engine {
         true
     }
 
-    fn invalidate_layout(&mut self) {
+    fn refresh_display_layout(&mut self) {
+        self.quadrants = self.layout.quadrants();
         self.fit = None;
+    }
+
+    fn invalidate_layout(&mut self) {
+        self.refresh_display_layout();
         self.insertion_focus = self
             .insertion_focus
             .filter(|&id| self.model.slot(id).is_some());
@@ -456,6 +479,146 @@ mod tests {
                 window_id: id as u32,
             }),
         }
+    }
+
+    fn observe_windows(engine: &mut Engine, ids: &[u32], settings: &Settings) -> Reconciliation {
+        let ticket = engine.begin_cycle();
+        let mut snapshot = observation(ticket.cycle, ids[0]);
+        let AppObservation::Complete { windows, .. } = &mut snapshot.applications[0] else {
+            unreachable!()
+        };
+        let template = windows[0].clone();
+        *windows = ids
+            .iter()
+            .map(|&id| {
+                let mut window = template.clone();
+                window.id.window_id = id;
+                window
+            })
+            .collect();
+        engine.accept(ticket, &snapshot, settings).unwrap()
+    }
+
+    #[test]
+    fn four_default_tiles_open_and_reopen_in_equal_quadrants() {
+        let mut settings = Settings::for_output(Rect {
+            x: -1008,
+            y: 20,
+            width: 1008,
+            height: 808,
+        });
+        settings.spacing.inner = 8;
+        let ids = [1, 2, 3, 4];
+        let expected = [(-1008, 20), (-1008, 428), (-500, 20), (-500, 428)].map(|(x, y)| Rect {
+            x,
+            y,
+            width: 500,
+            height: 400,
+        });
+        for incremental in [false, true] {
+            let mut engine = Engine::default();
+            if incremental {
+                for n in 1..4 {
+                    observe_windows(&mut engine, &ids[..n], &settings);
+                }
+            }
+            let grid = observe_windows(&mut engine, &ids, &settings).placements;
+            assert_eq!(grid.iter().map(|p| p.frame).collect::<Vec<_>>(), expected);
+            assert_eq!(
+                grid.iter()
+                    .map(|p| p.window.as_ref().unwrap().window_id)
+                    .collect::<Vec<_>>(),
+                ids
+            );
+            observe_windows(&mut engine, &[1, 2, 3, 4, 5], &settings);
+            assert_eq!(
+                observe_windows(&mut engine, &ids, &settings).placements,
+                grid
+            );
+            observe_windows(&mut engine, &[1, 2, 3], &settings);
+            let reopened = observe_windows(&mut engine, &[1, 2, 3, 6], &settings);
+            assert_eq!(
+                reopened
+                    .placements
+                    .iter()
+                    .map(|p| p.frame)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn four_tile_default_respects_and_restores_layout_edits() {
+        let settings = Settings::for_output(Rect {
+            width: 1200,
+            height: 800,
+            ..Rect::default()
+        });
+        let mut engine = Engine::default();
+        for i in 1..=4 {
+            engine.insert_slot(slot(i, 1));
+        }
+        let windows = engine.bound_windows();
+        engine.toggle_axis();
+        let grid = engine.placements(&settings);
+        assert_eq!(
+            grid[1].frame,
+            Rect {
+                x: 600,
+                y: 0,
+                width: 600,
+                height: 400
+            }
+        );
+        assert!(engine.resize_focused_tile(
+            &windows[0],
+            crate::ResizeDirection::Grow,
+            50,
+            &settings
+        ));
+        let edited = engine.placements(&settings);
+        assert_eq!((edited[0].frame.width, edited[1].frame.width), (650, 550));
+        assert_eq!(edited[2..], grid[2..]);
+
+        let mut restored = Engine::default();
+        for slot in &engine.model.workspace.slots {
+            restored.insert_slot(slot.clone());
+        }
+        restored.restore_layout(engine.layout.clone());
+        assert_eq!(restored.placements(&settings), edited);
+    }
+
+    #[test]
+    fn tall_windows_use_a_temporary_row_until_quadrants_fit() {
+        let settings = Settings::for_output(Rect {
+            width: 1000,
+            height: 800,
+            ..Rect::default()
+        });
+        let mut engine = Engine::default();
+        let grid = observe_windows(&mut engine, &[1, 2, 3, 4], &settings).placements;
+        let tall = grid[..2]
+            .iter()
+            .map(|p| (p.window.clone().unwrap(), (0, 500)))
+            .collect();
+        assert!(engine.fit_minimums(&settings, &tall));
+        let row = engine.placements(&settings);
+        assert!(
+            row.iter()
+                .all(|p| p.frame.height == 800 && p.frame.width == 250)
+        );
+        let larger = Settings::for_output(Rect {
+            height: 1000,
+            ..settings.output
+        });
+        assert!(engine.fit_minimums(&larger, &tall));
+        assert!(
+            engine
+                .placements(&larger)
+                .iter()
+                .all(|p| p.frame.height == 500 && p.frame.width == 500)
+        );
     }
 
     #[test]
