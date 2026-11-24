@@ -46,6 +46,120 @@ impl Omission {
 }
 
 impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
+    /// A bound window the window server still shows on screen, but which the
+    /// app's Accessibility snapshot omitted may still be transitioning. For
+    /// omissions without individual fullscreen or stranded-window evidence, downgrade
+    /// the app to `Unavailable` so reconciliation keeps its slots instead of
+    /// retiring one and re-adopting the window as new a cycle later. The
+    /// omission is believed once it outlasts [`OMISSION_SETTLE`].
+    pub(super) fn guard_omitted_windows(
+        &mut self,
+        workspace: WorkspaceId,
+        observation: &mut crate::NativeObservation,
+        onscreen_frames: Option<&HashMap<u32, crate::Rect>>,
+        close_recheck: &mut Option<Instant>,
+        retained: &HashSet<crate::PhysicalWindowId>,
+    ) {
+        if observation.mouse_down {
+            return;
+        }
+        let Some(onscreen_frames) = onscreen_frames else {
+            return;
+        };
+        let bound = self.workspaces.engine(workspace).bound_windows();
+        if bound.is_empty() && self.omitted_windows.is_empty() {
+            return;
+        }
+        let observed: HashSet<_> = live::observed_frames(observation).into_keys().collect();
+        self.omitted_windows
+            .retain(|window, _| match self.workspaces.workspace_of(window) {
+                Some(owner) => owner != workspace || !observed.contains(window),
+                // An omitted float's settle is tracked by affinity freezing.
+                None => self.workspaces.floating_workspace_of(window).is_some(),
+            });
+        let now = Instant::now();
+        for app_observation in &mut observation.applications {
+            let crate::AppObservation::Complete { app, .. } = app_observation else {
+                continue;
+            };
+            let settling = bound
+                .iter()
+                .filter(|window| window.app == app.id && !observed.contains(*window) && !retained.contains(*window))
+                .filter(|window| onscreen_frames.contains_key(&window.window_id))
+                .filter(|window| {
+                    let omission = self
+                        .omitted_windows
+                        .entry((*window).clone())
+                        .or_insert_with(|| {
+                            log_event!(
+                                "observation omitted {:?}: window server shows it on screen; keeping its slot",
+                                window
+                            );
+                            Omission::new(now)
+                        });
+                    if omission.is_settling(now) {
+                        let deadline = omission.next_recheck(now);
+                        *close_recheck =
+                            Some(close_recheck.map_or(deadline, |other| other.min(deadline)));
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .count();
+            if settling == 0 {
+                continue;
+            }
+            *app_observation = crate::AppObservation::Unavailable {
+                app: app.id.clone(),
+                error: format!(
+                    "accessibility snapshot omitted {settling} on-screen bound window(s)"
+                ),
+            };
+        }
+    }
+
+    /// A complete list of tileable windows can omit a live slot. AX fullscreen
+    /// identifies a window on its own Space. CG can also show a tile still
+    /// waiting for off-display recovery. Keep these individual bindings while
+    /// letting the same app open and close other windows.
+    pub(super) fn retained_omissions(
+        &mut self,
+        workspace: WorkspaceId,
+        observation: &crate::NativeObservation,
+        onscreen: Option<&HashMap<u32, crate::Rect>>,
+        outputs: &macos::DisplayOutputs,
+    ) -> HashSet<crate::PhysicalWindowId> {
+        let bound = self.workspaces.engine(workspace).bound_windows();
+        let mut retained = HashSet::new();
+        for entry in &observation.applications {
+            let crate::AppObservation::Complete { app, windows, .. } = entry else {
+                continue;
+            };
+            for id in bound
+                .iter()
+                .filter(|id| id.app == app.id && !windows.iter().any(|w| w.id == **id))
+            {
+                let stranded = onscreen
+                    .and_then(|cg| cg.get(&id.window_id))
+                    .is_some_and(|frame| {
+                        !outputs
+                            .frames()
+                            .any(|display| display.contains_center(*frame))
+                    });
+                if stranded
+                    || matches!(
+                        self.backend.native_fullscreen(id),
+                        Ok(true) | Err(macos::WindowAccessError::Unavailable)
+                    )
+                {
+                    retained.insert(id.clone());
+                }
+            }
+        }
+        retained
+    }
+
     /// An owned float that a Complete Accessibility snapshot omitted while the
     /// window server still shows it on screen keeps its workspace until the
     /// omission outlasts [`OMISSION_SETTLE`], like a bound tile does (#179).

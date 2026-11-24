@@ -36,6 +36,9 @@ Picture-in-Picture windows), buttonless accessory-application windows, utility p
 other subroles, and applications with incomplete or unusual Accessibility implementations remain
 global and are ignored so Spaceman never fights their bounds.
 
+An already tiled window keeps its place when Accessibility identifies the same window in native
+fullscreen. Exiting fullscreen reapplies the workspace layout.
+
 Some applications reposition their own windows. If a parked window reappears on screen while its
 application is frontmost, the user summoned it: the stale recovery frame is discarded and the window —
 tiled or floating — is re-homed to the workspace it reappeared on. If it reappears in the background —

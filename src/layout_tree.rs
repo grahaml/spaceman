@@ -68,17 +68,21 @@ impl LayoutTree {
         }
     }
 
-    /// Show a default four-tile split as two equal pairs. Explicit nesting and
-    /// resize weights carry user intent and take precedence over this default.
-    pub(crate) fn quadrants(&self) -> Option<Self> {
-        self.quadrants_on(self.root_axis())
-    }
-
-    fn quadrants_on(&self, axis: Axis) -> Option<Self> {
-        let Node::Split { children, .. } = &self.root else {
+    /// Four tiles form two pairs. At five, the usual horizontal layout reads
+    /// across a row of three and a row of two. Flipping the axis transposes it.
+    pub(crate) fn default_grid(&self) -> Option<Self> {
+        let Node::Split { axis, children } = &self.root else {
             return None;
         };
-        let ([first_pair, second_pair], []) = children.as_chunks::<2>() else {
+        match children.len() {
+            4 => self.default_grid_on(*axis, 2),
+            5 => self.default_grid_on(perpendicular(*axis), 3),
+            _ => None,
+        }
+    }
+
+    fn default_grid_on(&self, axis: Axis, first_group_len: usize) -> Option<Self> {
+        let Node::Split { children, .. } = &self.root else {
             return None;
         };
         if !children
@@ -88,20 +92,21 @@ impl LayoutTree {
             return None;
         }
         let pair_axis = perpendicular(axis);
-        let pairs = [first_pair, second_pair]
+        let (first, second) = children.split_at(first_group_len);
+        let groups = [first, second]
             .into_iter()
-            .map(|pair| Child {
+            .map(|group| Child {
                 weight: 1,
                 node: Node::Split {
                     axis: pair_axis,
-                    children: pair.to_vec(),
+                    children: group.to_vec(),
                 },
             })
             .collect();
         Some(Self {
             root: Node::Split {
                 axis,
-                children: pairs,
+                children: groups,
             },
         })
     }

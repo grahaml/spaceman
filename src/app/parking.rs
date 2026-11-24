@@ -261,6 +261,9 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 // than recording an off-screen frame as recovery data.
                 continue;
             }
+            if self.backend.native_fullscreen(&window) == Ok(true) {
+                continue;
+            }
             let park_output = Self::display_for_frame(frame, &displays).unwrap_or(output);
             let target = crate::geometry::parked_frame(park_output, &displays, frame);
             candidates.push((workspace, window, frame, target));
@@ -580,7 +583,9 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
         relocate: Option<(crate::Rect, crate::Rect)>,
         outputs: &macos::DisplayOutputs,
     ) -> macos::ApplyOutcome {
-        if self.parking_exempt.contains(window) {
+        if self.parking_exempt.contains(window)
+            || self.backend.native_fullscreen(window) == Ok(true)
+        {
             return macos::ApplyOutcome::Applied;
         }
         let ax_frame = match self.backend.frame(window) {
@@ -674,9 +679,7 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
             let confirmed = self
                 .backend
                 .window_server_frame(window)
-                .is_some_and(|actual| {
-                    actual.position_approximately_equals(target, RESTORE_CONFIRM_TOLERANCE)
-                });
+                .is_some_and(|actual| self.restore_arrived(actual, target));
             if confirmed {
                 self.commit_unparked(window);
             } else {
@@ -727,6 +730,10 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 result.outcome,
                 macos::ApplyOutcome::Applied | macos::ApplyOutcome::Constrained
             ) && let Some(frame) = self.parked.get(&result.window).copied()
+                && self
+                    .backend
+                    .window_server_frame(&result.window)
+                    .is_some_and(|actual| self.restore_arrived(actual, result.target))
             {
                 self.commit_unparked(&result.window);
                 retired.push((result.window.clone(), frame));

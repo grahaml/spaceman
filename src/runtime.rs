@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use crate::{
     Model, NativeObservation, PhysicalWindowId, Placement, Reconciliation, ReconciliationEvidence,
-    Settings, Slot, layout_tree::LayoutTree, reconcile,
+    Settings, Slot, layout_tree::LayoutTree, reconcile::reconcile_retaining,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,9 +21,9 @@ pub struct StaleCycle {
 pub struct Engine {
     model: Model,
     layout: LayoutTree,
-    // Derived from four default-weight leaves. Membership changes still operate
+    // Derived from four or five default-weight leaves. Membership changes still operate
     // on the requested split; editing a quadrant commits the displayed tree.
-    quadrants: Option<LayoutTree>,
+    default_grid: Option<LayoutTree>,
     // Only the requested layout above is persisted. The fit is shared by
     // placement, navigation and HUD previews until its inputs change.
     fit: Option<DisplayFit>,
@@ -61,6 +63,16 @@ impl Engine {
         observation: &NativeObservation,
         settings: &Settings,
     ) -> Result<Reconciliation, StaleCycle> {
+        self.accept_retaining(ticket, observation, settings, &HashSet::new())
+    }
+
+    pub(crate) fn accept_retaining(
+        &mut self,
+        ticket: CycleTicket,
+        observation: &NativeObservation,
+        settings: &Settings,
+        retained: &HashSet<PhysicalWindowId>,
+    ) -> Result<Reconciliation, StaleCycle> {
         if self.pending != Some(ticket) || observation.cycle != ticket.cycle {
             return Err(StaleCycle {
                 ticket,
@@ -69,7 +81,8 @@ impl Engine {
         }
         self.pending = None;
 
-        let mut result = reconcile(&self.model, observation, &self.evidence, settings);
+        let mut result =
+            reconcile_retaining(&self.model, observation, &self.evidence, settings, retained);
         if self.layout.sync_near(
             result.model.workspace.axis,
             &result.model.workspace.slots,
@@ -222,7 +235,7 @@ impl Engine {
     }
 
     fn base_layout(&self) -> &LayoutTree {
-        self.quadrants.as_ref().unwrap_or(&self.layout)
+        self.default_grid.as_ref().unwrap_or(&self.layout)
     }
 
     /// Re-evaluate even without a new refusal: a removed sibling or a larger
@@ -260,7 +273,7 @@ impl Engine {
         }
         let tree = self
             .layout
-            .fitted_for_display(self.quadrants.as_ref(), output, &slots);
+            .fitted_for_display(self.default_grid.as_ref(), output, &slots);
         let changed = self.fit.as_ref().and_then(|fit| fit.tree.as_ref()) != tree.as_ref();
         self.fit = Some(DisplayFit {
             output,
@@ -381,7 +394,7 @@ impl Engine {
         window: &PhysicalWindowId,
         op: impl FnOnce(&mut LayoutTree, crate::SlotId) -> bool,
     ) -> bool {
-        let requested = self.quadrants.as_ref().unwrap_or(&self.layout);
+        let requested = self.default_grid.as_ref().unwrap_or(&self.layout);
         let Some(tree) = self
             .fit
             .as_mut()
@@ -410,7 +423,7 @@ impl Engine {
     }
 
     fn refresh_display_layout(&mut self) {
-        self.quadrants = self.layout.quadrants();
+        self.default_grid = self.layout.default_grid();
         self.fit = None;
     }
 
@@ -537,6 +550,48 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn five_tiles_use_two_rows_and_fit_the_observed_minimums() {
+        let mut engine = Engine::default();
+        let settings = Settings::for_output(Rect {
+            x: -1200,
+            y: 30,
+            width: 1200,
+            height: 800,
+        });
+        let grid = observe_windows(&mut engine, &[1, 2, 3, 4, 5], &settings).placements;
+        let geometry = |p: &Placement| (p.frame.x, p.frame.y, p.frame.width, p.frame.height);
+        assert_eq!(
+            grid.iter().map(geometry).collect::<Vec<_>>(),
+            [
+                (-1200, 30, 400, 400),
+                (-800, 30, 400, 400),
+                (-400, 30, 400, 400),
+                (-1200, 430, 600, 400),
+                (-600, 430, 600, 400)
+            ]
+        );
+        // Only a leading pair plus a trailing trio can fit these widths and heights.
+        let minima = [(600, 380), (600, 380), (400, 380), (400, 380), (400, 380)];
+        let limits = grid
+            .iter()
+            .zip(minima)
+            .map(|(p, size)| (p.window.clone().unwrap(), size))
+            .collect();
+        assert!(engine.fit_minimums(&settings, &limits));
+        let fitted = engine.placements(&settings);
+        for ((tile, original), (width, height)) in fitted.iter().zip(&grid).zip(minima) {
+            assert_eq!(tile.slot, original.slot);
+            assert!(tile.frame.width >= width && tile.frame.height >= height);
+        }
+        assert_eq!((fitted[1].frame.x, fitted[2].frame.y), (-600, 430));
+        let four = observe_windows(&mut engine, &[1, 2, 3, 4], &settings).placements;
+        assert!(
+            four.iter()
+                .all(|p| p.frame.width == 600 && p.frame.height == 400)
+        );
     }
 
     #[test]

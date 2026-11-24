@@ -91,9 +91,9 @@ independently.
   necessarily the next tile in Spaceman's order. No test covers that close path.
 - **New tiled windows** on the workspace automatically exit Fullscreen Layout and return to tiled placement,
   while floating/dialog windows open above without exiting Fullscreen Layout.
-- Native macOS fullscreen is a different thing: such windows are not managed at all. **Known
-  defect (Observed, 2026-10-01):** a tiled browser window whose video enters native fullscreen
-  drops out of Accessibility observation, loses its slot after the 2 s omission grace, and is adopted
-  as a new window when it returns, losing its position, weight, and nesting. Fixing it needs the
-  snapshot to report native-fullscreen windows and the layout to hold their slots without placing
-  them.
+- A tiled window entering native macOS fullscreen holds its slot while Accessibility reports
+  the same window as fullscreen. Spaceman leaves its frame to macOS. When the window returns,
+  the workspace reapplies its saved split and weights. Other windows of the same app continue
+  to open and close. The regression test
+  `native_fullscreen_holds_only_its_own_tile_and_exits_back_into_place` exercises this through
+  the fake backend. A real browser video round trip still needs live qualification.

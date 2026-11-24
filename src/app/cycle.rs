@@ -280,79 +280,6 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
         Ok(status)
     }
 
-    /// A bound window the window server still shows on screen, but which the
-    /// app's Accessibility snapshot omitted (including a visible window left
-    /// with its center off-display after a display disconnect or shrink), has
-    /// not gone anywhere: the snapshot is incomplete for that app. Downgrade
-    /// the app to `Unavailable` so reconciliation keeps its slots instead of
-    /// retiring one and re-adopting the window as new a cycle later. The
-    /// omission is believed once it outlasts [`OMISSION_SETTLE`].
-    fn guard_omitted_windows(
-        &mut self,
-        workspace: WorkspaceId,
-        observation: &mut crate::NativeObservation,
-        onscreen_frames: Option<&HashMap<u32, crate::Rect>>,
-        close_recheck: &mut Option<Instant>,
-    ) {
-        if observation.mouse_down {
-            return;
-        }
-        let Some(onscreen_frames) = onscreen_frames else {
-            return;
-        };
-        let bound = self.workspaces.engine(workspace).bound_windows();
-        if bound.is_empty() && self.omitted_windows.is_empty() {
-            return;
-        }
-        let observed: HashSet<_> = live::observed_frames(observation).into_keys().collect();
-        self.omitted_windows
-            .retain(|window, _| match self.workspaces.workspace_of(window) {
-                Some(owner) => owner != workspace || !observed.contains(window),
-                // An omitted float's settle is tracked by affinity freezing.
-                None => self.workspaces.floating_workspace_of(window).is_some(),
-            });
-        let now = Instant::now();
-        for app_observation in &mut observation.applications {
-            let crate::AppObservation::Complete { app, .. } = app_observation else {
-                continue;
-            };
-            let settling = bound
-                .iter()
-                .filter(|window| window.app == app.id && !observed.contains(*window))
-                .filter(|window| onscreen_frames.contains_key(&window.window_id))
-                .filter(|window| {
-                    let omission = self
-                        .omitted_windows
-                        .entry((*window).clone())
-                        .or_insert_with(|| {
-                            log_event!(
-                                "observation omitted {:?}: window server shows it on screen; keeping its slot",
-                                window
-                            );
-                            Omission::new(now)
-                        });
-                    if omission.is_settling(now) {
-                        let deadline = omission.next_recheck(now);
-                        *close_recheck =
-                            Some(close_recheck.map_or(deadline, |other| other.min(deadline)));
-                        true
-                    } else {
-                        false
-                    }
-                })
-                .count();
-            if settling == 0 {
-                continue;
-            }
-            *app_observation = crate::AppObservation::Unavailable {
-                app: app.id.clone(),
-                error: format!(
-                    "accessibility snapshot omitted {settling} on-screen bound window(s)"
-                ),
-            };
-        }
-    }
-
     /// Apps the snapshot omitted entirely keep their slots while the window
     /// server still lists one of their bound windows. The window server also
     /// lists windows that are ordered out (a closed window its app keeps
@@ -520,12 +447,6 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                 }
             }
         }
-        self.guard_omitted_windows(
-            workspace,
-            &mut scoped_observation,
-            onscreen_frames,
-            close_recheck,
-        );
         let apps_with_window_server_evidence = self.apps_with_window_server_evidence(
             workspace,
             &scoped_observation,
@@ -539,10 +460,24 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
             |app| self.backend.is_process_running(app),
             |app| server_frames.is_none() || apps_with_window_server_evidence.contains(app),
         );
+        let retained =
+            self.retained_omissions(workspace, &scoped_observation, onscreen_frames, outputs);
+        for window in &retained {
+            self.applied[workspace.index()].remove(window);
+            self.apply_attempts[workspace.index()].remove(window);
+            self.constrained[workspace.index()].remove(window);
+        }
+        self.guard_omitted_windows(
+            workspace,
+            &mut scoped_observation,
+            onscreen_frames,
+            close_recheck,
+            &retained,
+        );
         let reconciliation = self
             .workspaces
             .engine_mut(workspace)
-            .accept(ticket, &scoped_observation, &settings)
+            .accept_retaining(ticket, &scoped_observation, &settings, &retained)
             .map_err(|error| format!("stale workspace cycle: {error:?}"))?;
         self.log_binding_decisions(workspace, &reconciliation.decisions, affinity_policy);
         let routes: Vec<_> = reconciliation
@@ -704,6 +639,9 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
             let Some(window) = placement.window.as_ref() else {
                 return false;
             };
+            if retained.contains(window) {
+                return false;
+            }
             if self.apply_attempts[workspace.index()]
                 .get(window)
                 .is_some_and(|(target, count)| {

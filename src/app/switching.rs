@@ -1,4 +1,3 @@
-use super::parking::RESTORE_CONFIRM_TOLERANCE;
 use super::*;
 
 const REVEAL_SETTLE_LIMIT: Duration = Duration::from_millis(300);
@@ -401,9 +400,10 @@ impl<B: WorkspaceBackend> WorkspaceRuntime<B> {
                     continue;
                 };
                 let target = self.restore_target(original);
-                if frames.get(&window.window_id).is_some_and(|actual| {
-                    actual.position_approximately_equals(target, RESTORE_CONFIRM_TOLERANCE)
-                }) {
+                if frames
+                    .get(&window.window_id)
+                    .is_some_and(|actual| self.restore_arrived(*actual, target))
+                {
                     self.commit_unparked(window);
                     removed.push((window.clone(), original));
                 }

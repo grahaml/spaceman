@@ -204,7 +204,20 @@ fn transient_recovery_failure_after_display_disconnect_preserves_slot_until_wind
         Some(WorkspaceId::ONE),
         "on-screen stranded bound window must not lose its slot while recovery settles"
     );
-    assert!(runtime.omitted_windows.contains_key(&browser));
+    // Recovery can take longer than the omission grace. A positive CG sighting
+    // off-display continues to reserve this exact tile.
+    runtime.omitted_windows.insert(
+        browser.clone(),
+        cycle::Omission::new(Instant::now() - Duration::from_secs(10)),
+    );
+    runtime.cycle(built_in.clone(), &cancelled).unwrap();
+    assert_eq!(
+        runtime
+            .workspaces
+            .engine(WorkspaceId::ONE)
+            .slot_for_window(&browser),
+        Some(slot_before)
+    );
 
     // App responds on the next cycle: window snaps back onto built-in display
     // with the exact same slot.
@@ -544,4 +557,66 @@ fn clamshell_display_change_does_not_adopt_hidden_windows_when_repark_is_transie
     );
     let expected = crate::geometry::parked_frame(external, &[external], external);
     assert_eq!(runtime.backend.frames[&hidden_win].x, expected.x);
+}
+
+#[test]
+fn stranded_tile_retries_a_position_write_until_the_window_server_shows_arrival() {
+    let display = builtin_1512();
+    let browser = window(42);
+    let normal = display.main().frame;
+    let mut rt = runtime(FakeBackend {
+        observation: Some(observation_for("com.example.Browser", &browser, normal)),
+        frames: HashMap::from([(browser.clone(), normal)]),
+        server_frames: HashMap::from([(browser.clone(), bottom_right_sliver())]),
+        frozen_server_frames: true,
+        ..FakeBackend::default()
+    });
+    bind(&mut rt, WorkspaceId::ONE, &browser);
+    let cancelled = AtomicBool::new(false);
+    let first = rt.cycle(display.clone(), &cancelled).unwrap();
+    assert!(first.failed > 0);
+    assert!(
+        rt.backend
+            .calls
+            .iter()
+            .any(|c| matches!(c, BackendCall::SetPosition(w, f) if w == &browser && *f == normal))
+    );
+    assert_eq!(rt.backend.server_frames[&browser], bottom_right_sliver());
+    rt.backend.frozen_server_frames = false;
+    assert_eq!(rt.cycle(display, &cancelled).unwrap().failed, 0);
+    assert_eq!(rt.backend.server_frames[&browser], normal);
+}
+
+#[test]
+fn oversized_windows_already_at_their_recovery_origin_do_not_get_moved_again() {
+    let display = builtin_1512();
+    let output = display.main().frame;
+    let large = crate::Rect {
+        width: output.width * 3,
+        ..output
+    };
+    let [tile, float] = [41, 42].map(window);
+    let mut rt = runtime(FakeBackend {
+        frames: HashMap::from([(tile.clone(), large), (float.clone(), large)]),
+        ..FakeBackend::default()
+    });
+    bind(&mut rt, WorkspaceId::ONE, &tile);
+    rt.workspaces.own_floating(float, WorkspaceId::ONE);
+    let visible = rt.visible_workspaces(&display);
+    let server = rt.backend.window_server_frames().unwrap();
+    let mut failed = 0;
+    rt.recover_stranded_visible(
+        &display,
+        &visible,
+        &server,
+        &AtomicBool::new(false),
+        &mut failed,
+    );
+    assert_eq!(failed, 0);
+    assert!(
+        !rt.backend
+            .calls
+            .iter()
+            .any(|call| matches!(call, BackendCall::Apply(..) | BackendCall::SetPosition(..)))
+    );
 }

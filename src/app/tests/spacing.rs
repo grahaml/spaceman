@@ -89,6 +89,12 @@ impl WorkspaceBackend for ToleranceAwareBackend {
     fn is_process_running(&mut self, app: &AppInstanceId) -> bool {
         self.0.is_process_running(app)
     }
+    fn native_fullscreen(
+        &mut self,
+        window: &crate::PhysicalWindowId,
+    ) -> Result<bool, macos::WindowAccessError> {
+        self.0.native_fullscreen(window)
+    }
     fn confirms_no_windows(&mut self, app: &AppInstanceId) -> bool {
         self.0.confirms_no_windows(app)
     }

@@ -9,6 +9,7 @@ navigate, reorder, nest, resize, and balance them from the keyboard or the point
 Automatic tiling                                        // tile.auto
 ├── New managed window -> joins the last focused tile’s split, or the root without a surviving focus
 │   ├── Four tiles in a flat split with default weights -> two equal pairs on opposite axes (2×2)
+│   ├── Five default tiles -> three in the first row and two in the second
 │   └── Creation or activation before the first visible frame -> briefly recheck for the foreground window
 ├── Window closes -> its slot retires, siblings reflow
 │   ├── Last app window closes but its surface lingers -> siblings reflow when the app confirms closure
@@ -80,6 +81,8 @@ pause, quit, or hotkey loss.
   exercises width refusals through the runtime and restores the requested axis on a wider display.
   `saved_four_tile_splits_show_quadrants_only_at_default_weights` restores both current saved
   layouts and older workspaces containing only slots and weights.
+  `five_tiles_refit_to_two_then_three_after_width_refusals` checks a five-window workspace
+  with two wide apps through the runtime and verifies that the saved layout survives the temporary fit.
 - Engine and layout tree: `new_window_joins_the_focused_nested_split` and
   `corner_drag_moves_both_nested_boundaries` cover insertion and diagonal resizing.
 - Unit (FakeBackend), `src/app/tests/gestures.rs`: drag swap preview, edge-nesting preview,
@@ -114,7 +117,9 @@ pause, quit, or hotkey loss.
   four-column layouts also show the grid. Resizing a quadrant saves the edited nested layout.
   When the default pairs cannot share a column or row at their known minimum sizes, Spaceman
   tries the same pairs on the other axis. The requested orientation returns when it fits.
-  Other window counts use the workspace’s usual split.
+  A fifth tile makes two rows of three and two with the default axis. If window minimums
+  require it, Spaceman tries columns or puts the pair first. Closing a tile brings back the
+  four-tile grid. `five_tiles_use_two_rows_and_fit_the_observed_minimums` covers that sequence.
 
 - Tests check requested frames; apps with minimum sizes may refuse them. Spaceman grows such a
   window's tile to the size it kept, taking the space from its siblings in proportion to what each
@@ -138,9 +143,8 @@ pause, quit, or hotkey loss.
 - `balance` has no default hotkey; it is CLI-only.
 - With gaps, a drop that lands in the gap between two tiles misses both and leaves the layout as it
   was. The Workspace HUD's layout previews stay schematic and ignore spacing.
-- A window that enters macOS native fullscreen (for example browser video) loses its slot after two
-  seconds and returns as a new tile at the end of the layout
-  ([known defect](fullscreen-layout.md#gotchas)).
+- A tiled window that macOS identifies as natively fullscreen holds its slot. Other windows
+  from the same app can still close and reflow. [Fullscreen behavior](fullscreen-layout.md#gotchas)
 - Floating windows (rules, manual Toggle Float, modal/dialog windows without an enabled fullscreen
   button, or non-resizable windows) are owned by a workspace (and can be moved between workspaces)
   but are never tiled or resized. A window that already holds a tile keeps it while it temporarily

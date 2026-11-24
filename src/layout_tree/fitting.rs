@@ -6,25 +6,35 @@ use super::{Child, LayoutTree, Node, extent, perpendicular, sizing::required_ext
 use crate::{Axis, Rect, SlotId};
 
 impl LayoutTree {
-    /// Try both two-by-two arrangements before regrouping a default workspace.
+    /// Prefer the regular grid, then try the other axis and group sizes before a flat fit.
     /// Explicit splits keep the orientation the user gave them.
     pub(crate) fn fitted_for_display(
         &self,
-        quadrants: Option<&Self>,
+        default_grid: Option<&Self>,
         output: Rect,
         minimums: &HashMap<SlotId, (i32, i32)>,
     ) -> Option<Self> {
-        let Some(grid) = quadrants else {
+        let Some(grid) = default_grid else {
             return self.fitted(output, minimums);
         };
         if grid.can_fit(output, minimums) {
             return grid.fitted(output, minimums);
         }
-        if let Some(mut alternate) = self.quadrants_on(perpendicular(grid.root_axis()))
-            && alternate.can_fit(output, minimums)
-        {
-            alternate.fit_minimums(output, minimums);
-            return Some(alternate);
+        let axis = grid.root_axis();
+        let cross = perpendicular(axis);
+        let alternatives: &[(Axis, usize)] = match &self.root {
+            Node::Split { children, .. } if children.len() == 5 => {
+                &[(axis, 2), (cross, 3), (cross, 2)]
+            }
+            _ => &[(cross, 2)],
+        };
+        for &(axis, first_group_len) in alternatives {
+            if let Some(mut alternate) = self.default_grid_on(axis, first_group_len)
+                && alternate.can_fit(output, minimums)
+            {
+                alternate.fit_minimums(output, minimums);
+                return Some(alternate);
+            }
         }
         let candidate = grid.fitted(output, minimums);
         if candidate.as_ref().unwrap_or(grid).can_fit(output, minimums) {

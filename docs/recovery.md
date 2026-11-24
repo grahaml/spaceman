@@ -22,6 +22,11 @@ the only record of where an off-screen window belongs.
 Pause and quit retry failed restorations. Do not kill the process while the menu says `Restoring
 windows` unless it is irrecoverably stuck.
 
+When a visible workspace has a window stranded at a display edge, Spaceman checks where the
+window server actually shows it and retries the move if it is still off-screen. A parked window
+keeps its saved recovery frame until the window server confirms it has returned or the window
+is confirmed gone. A one-pixel parking strip does not count as a return.
+
 ## After A Crash
 
 Reopen the same installed app without deleting state:

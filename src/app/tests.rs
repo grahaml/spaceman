@@ -48,6 +48,7 @@ enum BackendCall {
 
 #[derive(Default)]
 struct FakeBackend {
+    native_fullscreen: HashSet<crate::PhysicalWindowId>,
     apps_confirming_no_windows: HashSet<AppInstanceId>,
     close_probes: Vec<AppInstanceId>,
     frames: HashMap<crate::PhysicalWindowId, crate::Rect>,
@@ -92,6 +93,13 @@ struct FakeBackend {
 }
 
 impl WorkspaceBackend for FakeBackend {
+    fn native_fullscreen(
+        &mut self,
+        window: &crate::PhysicalWindowId,
+    ) -> Result<bool, macos::WindowAccessError> {
+        Ok(self.native_fullscreen.contains(window))
+    }
+
     fn confirms_no_windows(&mut self, app: &AppInstanceId) -> bool {
         self.close_probes.push(app.clone());
         self.apps_confirming_no_windows.contains(app)
@@ -111,6 +119,9 @@ impl WorkspaceBackend for FakeBackend {
             } = app
             {
                 windows.retain_mut(|window| {
+                    if self.native_fullscreen.contains(&window.id) {
+                        return false;
+                    }
                     let Some(frame) = self.frames.get(&window.id).copied() else {
                         return false;
                     };
