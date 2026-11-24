@@ -153,6 +153,8 @@ balance, CLI, and socket behavior.
 
 Four tiled windows on a default workspace fill a 2×2 grid. Open a fourth window or close a fifth
 to get the grid automatically. You can focus, swap, and resize its tiles with the usual controls.
+If two apps need more height than they can share in a column, Spaceman tries them side by side
+in a row. It returns to the original grid orientation when there is room.
 Spaceman keeps your custom splits and proportions when you add a window to an edited layout.
 When an app closes its last window,
 neighboring tiles can expand as soon as the app confirms the close. When apps refuse to fit side by side,

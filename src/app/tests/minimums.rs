@@ -83,6 +83,52 @@ fn the_last_tile_grows_toward_its_leading_neighbor() {
 }
 
 #[test]
+fn four_tile_workspace_refits_on_width_refusals_and_keeps_its_saved_axis() {
+    let [a, b, c, d] = [10, 11, 12, 13].map(window);
+    let mut runtime = tiled(&[
+        (a.clone(), 600),
+        (b.clone(), 600),
+        (c.clone(), 0),
+        (d.clone(), 0),
+    ]);
+    runtime
+        .workspaces
+        .engine_mut(WorkspaceId::ONE)
+        .toggle_axis();
+    let before = runtime.workspaces.state();
+    let output = outputs().main().frame;
+    let cancelled = AtomicBool::new(false);
+    runtime.layout_workspace(WorkspaceId::ONE, output, &cancelled);
+    for (window, (x, y, width)) in [&a, &b, &c, &d].into_iter().zip([
+        (0, 0, 600),
+        (0, 400, 600),
+        (600, 0, 400),
+        (600, 400, 400),
+    ]) {
+        assert_eq!(
+            runtime.backend.frames[window],
+            crate::Rect {
+                x,
+                y,
+                width,
+                height: 400
+            }
+        );
+    }
+    assert_eq!(runtime.workspaces.state(), before);
+    let wide = crate::Rect {
+        width: 1200,
+        ..output
+    };
+    runtime.layout_workspace(WorkspaceId::ONE, wide, &cancelled);
+    assert_eq!(
+        (runtime.backend.frames[&b].x, runtime.backend.frames[&b].y),
+        (600, 0)
+    );
+    assert_eq!(runtime.workspaces.state(), before);
+}
+
+#[test]
 fn wide_neighbors_stack_temporarily_then_return_to_the_requested_row() {
     let (left, right) = (window(10), window(11));
     let mut runtime = tiled(&[(left.clone(), 600), (right.clone(), 600)]);

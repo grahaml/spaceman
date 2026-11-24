@@ -2,16 +2,50 @@
 //! Never write these temporary groupings to workspace state.
 use std::collections::HashMap;
 
-use super::{Child, LayoutTree, Node, extent, sizing::required_extent};
+use super::{Child, LayoutTree, Node, extent, perpendicular, sizing::required_extent};
 use crate::{Axis, Rect, SlotId};
 
 impl LayoutTree {
-    pub(crate) fn can_fit(&self, output: Rect, minimums: &HashMap<SlotId, (i32, i32)>) -> bool {
+    /// Try both two-by-two arrangements before regrouping a default workspace.
+    /// Explicit splits keep the orientation the user gave them.
+    pub(crate) fn fitted_for_display(
+        &self,
+        quadrants: Option<&Self>,
+        output: Rect,
+        minimums: &HashMap<SlotId, (i32, i32)>,
+    ) -> Option<Self> {
+        let Some(grid) = quadrants else {
+            return self.fitted(output, minimums);
+        };
+        if grid.can_fit(output, minimums) {
+            return grid.fitted(output, minimums);
+        }
+        if let Some(mut alternate) = self.quadrants_on(perpendicular(grid.root_axis()))
+            && alternate.can_fit(output, minimums)
+        {
+            alternate.fit_minimums(output, minimums);
+            return Some(alternate);
+        }
+        let candidate = grid.fitted(output, minimums);
+        if candidate.as_ref().unwrap_or(grid).can_fit(output, minimums) {
+            return candidate;
+        }
+        let flat_fit = self
+            .fitted(output, minimums)
+            .unwrap_or_else(|| self.clone());
+        if flat_fit.can_fit(output, minimums) {
+            Some(flat_fit)
+        } else {
+            candidate
+        }
+    }
+
+    fn can_fit(&self, output: Rect, minimums: &HashMap<SlotId, (i32, i32)>) -> bool {
         required_extent(&self.root, Axis::Horizontal, minimums) <= output.width
             && required_extent(&self.root, Axis::Vertical, minimums) <= output.height
     }
 
-    pub(crate) fn fitted(
+    pub(super) fn fitted(
         &self,
         output: Rect,
         minimums: &HashMap<SlotId, (i32, i32)>,
@@ -63,10 +97,7 @@ fn group_if_needed(node: &mut Node, output: Rect, minimums: &HashMap<SlotId, (i3
     let Node::Split { children, axis } = node else {
         return;
     };
-    let cross = match axis {
-        Axis::Horizontal => Axis::Vertical,
-        Axis::Vertical => Axis::Horizontal,
-    };
+    let cross = perpendicular(*axis);
     let sizes: Vec<_> = children
         .iter()
         .map(|child| {

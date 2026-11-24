@@ -74,8 +74,10 @@ pause, quit, or hotkey loss.
 - `four_default_tiles_open_and_reopen_in_equal_quadrants` exercises discovery in one cycle and
   across cycles, the transitions through three and five windows, and spacing on an offset display.
   `four_tile_default_respects_and_restores_layout_edits` covers the other root axis and a persisted
-  resize inside a quadrant. `tall_windows_use_a_temporary_row_until_quadrants_fit` checks
-  fallback and recovery when adjacent apps require more height than a column can give them.
+  resize inside a quadrant. `quadrant_pairs_turn_to_fit_app_minimums` covers two tall windows
+  sharing a row. `tall_windows_use_a_temporary_row_until_quadrants_fit` covers four tall windows
+  requiring full-height columns. `four_tile_workspace_refits_on_width_refusals_and_keeps_its_saved_axis`
+  exercises width refusals through the runtime and restores the requested axis on a wider display.
   `saved_four_tile_splits_show_quadrants_only_at_default_weights` restores both current saved
   layouts and older workspaces containing only slots and weights.
 - Engine and layout tree: `new_window_joins_the_focused_nested_split` and
@@ -110,6 +112,8 @@ pause, quit, or hotkey loss.
   then the right. Flipping the root fills the top row first. Gaps and display padding still apply,
   and indivisible dimensions give the extra point to the trailing tile. Existing saved default
   four-column layouts also show the grid. Resizing a quadrant saves the edited nested layout.
+  When the default pairs cannot share a column or row at their known minimum sizes, Spaceman
+  tries the same pairs on the other axis. The requested orientation returns when it fits.
   Other window counts use the workspace’s usual split.
 
 - Tests check requested frames; apps with minimum sizes may refuse them. Spaceman grows such a
